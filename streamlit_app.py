@@ -11,25 +11,49 @@ supabase = create_client(url, key)
 
 st.set_page_config(page_title="Hybrid-45 PRO", page_icon="⚡", layout="wide")
 
-# CUSTOM CSS FOR HIGH CONTRAST & READABILITY
+# FORCED HIGH-CONTRAST DARK THEME (Overrides Browser Settings)
 st.markdown("""
     <style>
-    /* Force high-contrast white text */
-    [data-testid="stMetricValue"] { color: #FFFFFF !important; font-weight: 800 !important; font-size: 2.2rem !important; }
-    [data-testid="stMetricLabel"] { color: #E0E0E0 !important; font-size: 1.1rem !important; }
-    h1, h2, h3, p { color: white !important; }
-    
-    /* Modern Card Look */
-    .stMetric {
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        padding: 20px;
-        border-radius: 15px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    /* Force background to be dark */
+    .stApp {
+        background-color: #05070a !important;
     }
     
-    /* Custom Progress Bar Color */
-    .stProgress > div > div > div > div { background-color: #ff4b4b; }
+    /* Force ALL text to be stark white */
+    h1, h2, h3, p, span, label, .stMarkdown {
+        color: #FFFFFF !important;
+    }
+
+    /* Metric Cards Styling */
+    [data-testid="stMetricValue"] {
+        color: #FFD700 !important; /* Gold for numbers */
+        font-weight: 800 !important;
+    }
+    
+    [data-testid="stMetricLabel"] {
+        color: #FFFFFF !important;
+        font-size: 1.1rem !important;
+    }
+
+    .stMetric {
+        background: #161b22 !important;
+        border: 2px solid #30363d !important;
+        padding: 20px;
+        border-radius: 12px;
+    }
+
+    /* Make buttons and inputs visible */
+    .stButton>button {
+        background-color: #ff4b4b !important;
+        color: white !important;
+        border-radius: 8px;
+    }
+    
+    input, select, textarea {
+        background-color: #0d1117 !important;
+        color: white !important;
+        border: 1px solid #30363d !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -46,17 +70,9 @@ ex_list = {
     "C: Peak Intensity": ["Hack Squat (Intensity)", "Chest Fly Machine", "Pull-Ups / Assisted", "Face Pulls", "Overhead Tricep Extension"]
 }
 
-# --- SESSION PROGRESS ---
-if not full_df.empty:
-    today = datetime.now().strftime("%Y-%m-%d")
-    today_data = full_df[full_df['created_at'].str.contains(today)]
-    completed_count = len(today_data['exercise'].unique())
-    progress = min(completed_count / 5, 1.0)
-    st.write(f"**Session Progress: {completed_count}/5 Exercises Done**")
-    st.progress(progress)
-
 # --- LOGGING FORM ---
-with st.expander("➕ LOG NEXT SET", expanded=True):
+with st.container():
+    st.subheader("➕ LOG NEXT SET")
     with st.form("entry_form", clear_on_submit=True):
         day_type = st.radio("Workout Day", list(ex_list.keys()), horizontal=True)
         ex_choice = st.selectbox("Select Exercise", ex_list[day_type])
@@ -71,62 +87,53 @@ with st.expander("➕ LOG NEXT SET", expanded=True):
             supabase.table("gym_logs").insert(data).execute()
             st.rerun()
 
-# --- COACHING & COMPARISON ---
+# --- COMPARISON DASHBOARD ---
 if not full_df.empty:
     st.divider()
-    selected_ex = st.selectbox("🔍 SELECT EXERCISE TO REVIEW", sorted(full_df['exercise'].unique()))
+    selected_ex = st.selectbox("🔍 REVIEW PROGRESS", sorted(full_df['exercise'].unique()))
     
     history = full_df[full_df['exercise'] == selected_ex].head(2)
     
     if not history.empty:
         col1, col2 = st.columns(2)
-        
-        # Latest Workout (Stark White)
         with col1:
-            st.subheader("🥇 Latest Session")
             row1 = history.iloc[0]
-            st.metric("Weight", f"{row1['weight']} kg")
-            st.metric("Reps", f"{row1['reps']}")
-            st.metric("Total Vol", f"{int(row1['weight'] * row1['reps'])} kg")
+            st.metric("LATEST WEIGHT", f"{row1['weight']} kg")
+            st.metric("LATEST REPS", f"{row1['reps']}")
         
-        # Comparison with Arrows
         with col2:
-            st.subheader("🥈 Previous Session")
             if len(history) > 1:
                 row2 = history.iloc[1]
                 w_delta = float(row1['weight'] - row2['weight'])
-                r_delta = int(row1['reps'] - row2['reps'])
-                st.metric("Weight", f"{row2['weight']} kg", delta=f"{w_delta} kg")
-                st.metric("Reps", f"{row2['reps']}", delta=f"{r_delta}")
-                st.metric("Total Vol", f"{int(row2['weight'] * row2['reps'])} kg")
+                st.metric("PREVIOUS WEIGHT", f"{row2['weight']} kg", delta=f"{w_delta} kg")
+                st.metric("PREVIOUS REPS", f"{row2['reps']}", delta=int(row1['reps'] - row2['reps']))
             else:
-                st.info("Log one more session for comparison data.")
+                st.info("Log another session for comparison.")
 
-        # AUTOMATED HYBRID-45 COACH
-        if len(history) > 1:
-            if row1['weight'] == row2['weight']:
-                target = round(row1['weight'] * 1.025, 1)
-                st.success(f"🎯 **COACH:** You hit {row1['weight']}kg twice. Today's Goal: **{target}kg**")
-            elif row1['weight'] > row2['weight']:
-                st.info("🔥 **COACH:** New weight record! Focus on maintaining form today.")
-
-    # --- TOOLS & CHARTS ---
+    # --- EXTRA SKILLS: DELETE & REST ---
     st.divider()
-    t1, t2 = st.tabs(["📈 Progress Chart", "⏲️ Rest Timer"])
-    
-    with t1:
-        chart_data = full_df[full_df['exercise'] == selected_ex].copy()
-        chart_data['date'] = pd.to_datetime(chart_data['created_at'])
-        st.area_chart(chart_data.set_index('date')['weight'], color="#ff4b4b")
-        
-    with t2:
-        if st.button("Start 90s Rest"):
-            placeholder = st.empty()
+    col_a, col_b = st.columns(2)
+    with col_a:
+        if st.button("❌ Delete Last Entry"):
+            last_id = full_df.iloc[0]['id']
+            supabase.table("gym_logs").delete().eq("id", last_id).execute()
+            st.warning("Last entry deleted.")
+            time.sleep(1)
+            st.rerun()
+            
+    with col_b:
+        if st.button("⏲️ 90s Rest Timer"):
+            t = st.empty()
             for i in range(90, 0, -1):
-                placeholder.metric("Rest Remaining", f"{i}s")
+                t.metric("RESTING...", f"{i}s")
                 time.sleep(1)
             st.balloons()
-            st.warning("⏱️ REST OVER: GET TO THE NEXT SET!")
+
+    st.subheader("📈 Weight History")
+    chart_data = full_df[full_df['exercise'] == selected_ex].copy()
+    chart_data['date'] = pd.to_datetime(chart_data['created_at'])
+    st.area_chart(chart_data.set_index('date')['weight'], color="#ff4b4b")
 
 else:
-    st.info("Welcome to Hybrid-45! Log your first set above to see your dashboard.")
+    st.info("No data yet. Log your first set!")
+    
