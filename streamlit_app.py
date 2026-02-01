@@ -11,14 +11,11 @@ supabase = create_client(url, key)
 
 st.set_page_config(page_title="Hybrid-45 Pro", page_icon="none", layout="wide")
 
-# --- MINIMALIST MODERN UI STYLING ---
+# --- UI STYLING ---
 st.markdown("""
     <style>
     .stApp { background-color: #f8f9fa !important; }
-    h1, h2, h3, p, span, label { 
-        color: #2d3436 !important; 
-        font-family: 'Inter', -apple-system, sans-serif; 
-    }
+    h1, h2, h3, p, span, label { color: #2d3436 !important; font-family: 'Inter', sans-serif; }
     div.stButton > button {
         background-color: #4834d4 !important;
         color: #ffffff !important;
@@ -28,7 +25,6 @@ st.markdown("""
         font-weight: 700 !important;
         width: 100% !important;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
     }
     .goal-card {
         background: #ffffff;
@@ -37,17 +33,6 @@ st.markdown("""
         border-radius: 12px;
         text-align: center;
         box-shadow: 0 2px 8px rgba(0,0,0,0.02);
-    }
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-    .stTabs [data-baseweb="tab"] {
-        background-color: #ffffff;
-        border: 1px solid #e1e8ed;
-        border-radius: 8px;
-        color: #636e72 !important;
-    }
-    .stTabs [data-baseweb="tab"][aria-selected="true"] {
-        color: #4834d4 !important;
-        border-bottom: 3px solid #4834d4 !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -61,96 +46,96 @@ def load_data():
         if not data.empty:
             data['created_at'] = pd.to_datetime(data['created_at'])
             data['vol'] = data['weight'] * data['reps']
-            # Brzycki 1RM formula
             data['e1rm'] = round(data['weight'] / (1.0278 - (0.0278 * data['reps'])), 1)
         return data
-    except Exception:
+    except:
         return pd.DataFrame()
 
 df = load_data()
 
-# --- TOP LEVEL WIDGETS ---
 st.title("Hybrid-45 Performance")
 
+# --- TOP WIDGETS ---
 if not df.empty:
-    col_w1, col_w2, col_w3 = st.columns(3)
-    with col_w1:
+    c1, c2, c3 = st.columns(3)
+    with c1:
         st.markdown('<div class="goal-card">', unsafe_allow_html=True)
         today_vol = df[df['created_at'].dt.date == datetime.now().date()]['vol'].sum()
         st.metric("Session Volume", f"{int(today_vol)}kg")
         st.progress(min(float(today_vol) / 5000.0, 1.0))
         st.markdown('</div>', unsafe_allow_html=True)
-    with col_w2:
+    with c2:
         st.markdown('<div class="goal-card">', unsafe_allow_html=True)
         st.metric("Peak Strength", f"{df['e1rm'].max()}")
         st.markdown('</div>', unsafe_allow_html=True)
-    with col_w3:
+    with c3:
         st.markdown('<div class="goal-card">', unsafe_allow_html=True)
         st.metric("Total Sessions", len(df['created_at'].dt.date.unique()))
         st.markdown('</div>', unsafe_allow_html=True)
 
-# --- NAVIGATION TABS ---
+# --- TABS ---
 t_log, t_sesh, t_lab, t_hall = st.tabs(["LOG", "ANALYSIS", "LAB", "HALL"])
 
-# --- TAB 1: LOGGING ---
 with t_log:
     with st.form("gym_form", clear_on_submit=True):
         st.subheader("Entry")
-        exercises = ["DB Bench Press", "Hack Squat", "Lat Pulldown", "Lateral Raises", "Tricep Push Down", "Seated Cable Row", "Leg Press", "Bicep Curls", "Pull Ups", "Face Pulls", "Machine Crunch"]
+        exs = ["DB Bench Press", "Hack Squat", "Lat Pulldown", "Lateral Raises", "Tricep Push Down", "Seated Cable Row", "Leg Press", "Bicep Curls", "Pull Ups", "Face Pulls", "Machine Crunch"]
         if not df.empty:
-            existing_ex = sorted(df['exercise'].unique().tolist())
-            exercises = sorted(list(set(exercises + existing_ex)))
-        
-        ex = st.selectbox("Exercise", exercises)
-        c1, c2 = st.columns(2)
-        with c1: wt = st.number_input("Weight (kg)", min_value=0.0, step=2.5)
-        with c2: rp = st.number_input("Reps", min_value=0, step=1)
-        note = st.text_area("Notes", placeholder="Seat Position, Tempo...")
-        
+            exs = sorted(list(set(exs + df['exercise'].unique().tolist())))
+        ex = st.selectbox("Exercise", exs)
+        cw, cr = st.columns(2)
+        with cw: wt = st.number_input("Weight (kg)", min_value=0.0, step=2.5)
+        with cr: rp = st.number_input("Reps", min_value=0, step=1)
+        note = st.text_area("Notes", placeholder="Seat Pos...")
         if st.form_submit_button("SAVE SET"):
             payload = {"exercise": ex, "weight": wt, "reps": rp, "notes": note}
             supabase.table("gym_logs").insert(payload).execute()
             st.cache_data.clear()
             st.rerun()
-
-    st.divider()
     if st.button("START 90s REST"):
         ph = st.empty()
         for i in range(90, 0, -1):
             ph.metric("REMAINING", f"{i}s")
             time.sleep(1)
-        st.success("REST COMPLETED")
+        st.success("REST DONE")
 
-# --- TAB 2: ANALYSIS ---
 with t_sesh:
     if not df.empty:
-        today_date = datetime.now().date()
-        today_df = df[df['created_at'].dt.date == today_date]
-        
+        today_dt = datetime.now().date()
+        today_df = df[df['created_at'].dt.date == today_dt]
         if not today_df.empty:
-            st.subheader("Current Session vs Previous")
-            unique_today = sorted(today_df['exercise'].unique())
-            for item in unique_today:
-                past = df[(df['exercise'] == item) & (df['created_at'].dt.date < today_date)].head(1)
+            st.subheader("Today vs Last")
+            for item in sorted(today_df['exercise'].unique()):
+                past = df[(df['exercise'] == item) & (df['created_at'].dt.date < today_dt)].head(1)
                 curr = today_df[today_df['exercise'] == item].head(1)
                 with st.expander(item, expanded=True):
                     sc1, sc2 = st.columns(2)
                     sc1.metric("Today", f"{curr.iloc[0]['weight']}kg")
                     if not past.empty:
-                        p_wt = past.iloc[0]['weight']
-                        diff = curr.iloc[0]['weight'] - p_wt
-                        sc2.metric("Last Time", f"{p_wt}kg", delta=f"{diff}kg")
-                    else:
-                        st.info("New movement for today!")
+                        d = curr.iloc[0]['weight'] - past.iloc[0]['weight']
+                        sc2.metric("Last", f"{past.iloc[0]['weight']}kg", delta=f"{d}kg")
         else:
-            st.subheader("Last Session Overview")
-            last_date = df['created_at'].dt.date.iloc[0]
-            last_sesh = df[df['created_at'].dt.date == last_date]
-            st.info(f"Summary from {last_date.strftime('%d %b')}")
-            st.dataframe(last_sesh[['exercise', 'weight', 'reps', 'notes']], hide_index=True, use_container_width=True)
+            st.subheader("Last Session")
+            last_dt = df['created_at'].dt.date.iloc[0]
+            last_df = df[df['created_at'].dt.date == last_dt]
+            st.dataframe(last_df[['exercise', 'weight', 'reps', 'notes']], hide_index=True)
     else:
-        st.info("Log your first set to unlock data analysis.")
+        st.info("Log a set to start.")
 
-# --- TAB 3: LAB ---
 with t_lab:
-    if not df.
+    if not df.empty:
+        sel = st.selectbox("Analysis", sorted(df['exercise'].unique()))
+        h = df[df['exercise'] == sel].sort_values('created_at').tail(10)
+        st.line_chart(h.set_index('created_at')[['weight', 'e1rm']], color=["#4834d4", "#686de0"])
+        st.bar_chart(h.set_index('created_at')['vol'], color="#4834d4")
+
+with t_hall:
+    if not df.empty:
+        prs = df.sort_values('weight', ascending=False).drop_duplicates('exercise')
+        st.dataframe(prs[['exercise', 'weight', 'reps', 'e1rm']].reset_index(drop=True), use_container_width=True)
+        if st.button("DELETE LAST"):
+            l_id = df.iloc[0]['id']
+            supabase.table("gym_logs").delete().eq("id", l_id).execute()
+            st.cache_data.clear()
+            st.rerun()
+            
