@@ -11,27 +11,48 @@ supabase = create_client(url, key)
 
 st.set_page_config(page_title="H-45 COMMAND", page_icon="💪", layout="wide")
 
-# --- CUSTOM CSS: FORCED DARK MODE & BUTTON FIXES ---
+# --- MODERN NEON THEME & BUTTON OVERRIDES ---
 st.markdown("""
     <style>
-    .stApp { background-color: #05070a !important; }
-    h1, h2, h3, p, span, label, .stMarkdown { color: #FFFFFF !important; }
+    /* Force Dark Background */
+    .stApp { background-color: #0a0e14 !important; }
     
-    /* STARK WHITE BUTTON TEXT */
+    /* Global Text Color */
+    h1, h2, h3, p, span, label, .stMarkdown { color: #ffffff !important; }
+
+    /* MODERN BUTTONS: Fixed White Text, No Hover Issues */
     div.stButton > button {
-        background-color: #ff4b4b !important;
-        color: white !important;
-        font-weight: 800 !important;
+        background-color: #007bff !important; /* Electric Blue */
+        color: #ffffff !important;
+        font-weight: 700 !important;
         border: none !important;
+        border-radius: 8px !important;
+        padding: 15px !important;
+        width: 100% !important;
         text-transform: uppercase;
+        box-shadow: 0px 4px 10px rgba(0, 123, 255, 0.3);
+    }
+    
+    /* Ensure text stays white even when clicked */
+    div.stButton > button:hover, div.stButton > button:active, div.stButton > button:focus {
+        color: #ffffff !important;
+        background-color: #0056b3 !important;
+        border: none !important;
     }
 
-    /* METRIC CARDS */
-    [data-testid="stMetricValue"] { color: #FFD700 !important; font-weight: 800; }
-    .stMetric { background: #161b22 !important; border: 1px solid #30363d !important; padding: 15px; border-radius: 12px; }
-    
-    /* INPUT BOX STYLING */
-    input, select, textarea { background-color: #0d1117 !important; color: white !important; border: 1px solid #30363d !important; }
+    /* Metric Card Modern Look */
+    [data-testid="stMetricValue"] { color: #FFD700 !important; font-weight: 800; font-size: 2.5rem !important; }
+    .stMetric {
+        background: #1c222d !important;
+        border: 1px solid #2d3646 !important;
+        padding: 20px !important;
+        border-radius: 15px !important;
+    }
+
+    /* Tab Styling */
+    .stTabs [data-baseweb="tab-list"] { background-color: transparent; }
+    .stTabs [data-baseweb="tab"] { color: #94a3b8 !important; font-weight: 600; }
+    .stTabs [data-baseweb="tab"][aria-selected="true"] { color: #ffffff !important; border-bottom-color: #007bff !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -44,7 +65,7 @@ def load_data():
         if not df.empty:
             df['created_at'] = pd.to_datetime(df['created_at'])
             df['vol'] = df['weight'] * df['reps']
-            # Brzycki 1RM Formula: Weight / (1.0278 - (0.0278 * Reps))
+            # Strength Est (1RM)
             df['e1rm'] = round(df['weight'] / (1.0278 - (0.0278 * df['reps'])), 1)
         return df
     except Exception:
@@ -54,8 +75,19 @@ f_df = load_data()
 
 st.title("💪 HYBRID-45 COMMAND")
 
-# --- NAVIGATION TABS ---
-t_log, t_sesh, t_lab, t_pr = st.tabs(["📝 LOG", "📊 SESSION", "📈 LAB", "🏆 PRs"])
+# --- TOP STATS BAR ---
+if not f_df.empty:
+    m1, m2, m3 = st.columns(3)
+    with m1: st.metric("Workouts Logged", len(f_df))
+    with m2: 
+        total_vol = int(f_df['vol'].sum())
+        st.metric("All-Time Volume", f"{total_vol:,}kg")
+    with m3:
+        best_lift = f_df['weight'].max()
+        st.metric("Max Weight", f"{best_lift}kg")
+
+# --- MAIN TABS ---
+t_log, t_sesh, t_lab, t_pr = st.tabs(["⚡ LOG SET", "📊 SESSION", "📈 PROGRESS", "🏆 HALL OF FAME"])
 
 # --- TAB 1: LOGGING ---
 with t_log:
@@ -66,25 +98,19 @@ with t_log:
         
         ex = st.selectbox("Exercise", opts)
         
-        # Show PR for selected exercise immediately
-        if not f_df.empty:
-            ex_pr = f_df[f_df['exercise'] == ex]['weight'].max()
-            if ex_pr > 0:
-                st.caption(f"⭐ Personal Record for {ex}: {ex_pr} kg")
-
         c1, c2 = st.columns(2)
         with c1: wt = st.number_input("Weight (kg)", step=2.5)
         with c2: rp = st.number_input("Reps", step=1)
         
-        note = st.text_area("Notes", placeholder="Seat pos, tempo, etc...")
+        note = st.text_area("Notes", placeholder="Seat pos, tempo, tempo...")
         
-        if st.form_submit_button("SAVE SET 🚀"):
+        if st.form_submit_button("SAVE TO CLOUD 🚀"):
             payload = {"exercise": ex, "weight": wt, "reps": rp, "notes": note}
             supabase.table("gym_logs").insert(payload).execute()
             st.cache_data.clear()
             st.rerun()
 
-# --- TAB 2: SESSION ANALYSIS ---
+# --- TAB 2: SESSION SUMMARY ---
 with t_sesh:
     if not f_df.empty:
         today = datetime.now().date()
@@ -96,41 +122,41 @@ with t_sesh:
                 curr = t_df[t_df['exercise'] == item].head(1)
                 with st.expander(f"📌 {item}", expanded=True):
                     sc1, sc2 = st.columns(2)
-                    sc1.metric("Today", f"{curr.iloc[0]['weight']}kg")
+                    sc1.metric("Current", f"{curr.iloc[0]['weight']}kg")
                     if not past.empty:
                         p_wt = past.iloc[0]['weight']
                         diff = curr.iloc[0]['weight'] - p_wt
-                        sc2.metric("Last", f"{p_wt}kg", delta=f"{diff}kg")
-                    else:
-                        sc2.write("First entry!")
+                        sc2.metric("Last Time", f"{p_wt}kg", delta=f"{diff}kg")
         else:
-            st.info("No sets logged today.")
+            st.info("Log a set to see your session comparison.")
     else:
-        st.info("Log your first set to begin.")
+        st.info("No data yet.")
 
 # --- TAB 3: PROGRESS LAB ---
 with t_lab:
     if not f_df.empty:
-        sel = st.selectbox("Analysis", sorted(f_df['exercise'].unique()))
+        sel = st.selectbox("Select Exercise", sorted(f_df['exercise'].unique()))
         h = f_df[f_df['exercise'] == sel].sort_values('created_at')
-        st.write("#### Strength Trend (Estimated 1RM)")
+        
+        st.write("#### Strength Trend (Est. 1RM)")
         st.line_chart(h.set_index('created_at')['e1rm'], color="#FFD700")
-        st.write("#### Volume per Set")
-        st.bar_chart(h.set_index('created_at')['vol'], color="#29b5e8")
+        
+        st.write("#### Total Workload (Volume)")
+        st.bar_chart(h.set_index('created_at')['vol'], color="#007bff")
     else:
-        st.info("No data available.")
+        st.info("Analyze your growth here once you've logged data.")
 
 # --- TAB 4: HALL OF FAME ---
 with t_pr:
     if not f_df.empty:
-        st.subheader("🏆 Personal Records")
+        st.subheader("🏆 Personal Bests")
         prs = f_df.sort_values('weight', ascending=False).drop_duplicates('exercise')
-        st.dataframe(prs[['exercise', 'weight', 'reps', 'e1rm']].reset_index(drop=True), hide_index=True)
-        if st.button("🗑️ DELETE LAST"):
+        st.table(prs[['exercise', 'weight', 'reps', 'e1rm']].reset_index(drop=True))
+        
+        st.divider()
+        if st.button("🗑️ DELETE LAST ENTRY"):
             l_id = f_df.iloc[0]['id']
             supabase.table("gym_logs").delete().eq("id", l_id).execute()
             st.cache_data.clear()
             st.rerun()
-    else:
-        st.info("Hall of Fame is empty.")
-        
+            
