@@ -18,12 +18,12 @@ st.markdown("""
     h1, h2, h3, p, span, label, .stMarkdown { color: #FFFFFF !important; }
     
     /* FIX BUTTON VISIBILITY */
-    .stButton>button {
+    div.stButton > button {
         background-color: #ff4b4b !important;
         color: white !important;
-        font-weight: bold !important;
+        font-weight: 800 !important;
         border: none !important;
-        width: 100%;
+        width: 100% !important;
         text-transform: uppercase;
     }
 
@@ -47,12 +47,13 @@ def load_data():
             df['created_at'] = pd.to_datetime(df['created_at'])
             # Brzycki 1RM Formula
             df['e1rm'] = round(df['weight'] / (1.0278 - (0.0278 * df['reps'])), 1)
+            df['volume'] = df['weight'] * df['reps']
         return df
     except: return pd.DataFrame()
 
 full_df = load_data()
 
-st.title("💪 HYBRID-45 COMMAND CENTER")
+st.title("💪 HYBRID-45 COMMAND")
 
 # --- NAVIGATION TABS ---
 tab_log, tab_session, tab_analysis, tab_history = st.tabs(["⚡ LOG SET", "📊 SESSION", "📈 PROGRESS LAB", "🏆 HALL OF FAME"])
@@ -60,11 +61,15 @@ tab_log, tab_session, tab_analysis, tab_history = st.tabs(["⚡ LOG SET", "📊 
 # --- TAB 1: LOGGING ---
 with tab_log:
     with st.form("entry_form", clear_on_submit=True):
-        base_ex = ["DB Bench Press", "Hack Squat", "Lat Pulldown", "Lateral Raises", "Tricep Push Down", "Seated Cable Row", "Leg Press", "Bicep Curls", "Pull Ups", "Face Pulls", "Machine Crunch"]
-        if not full_df.empty:
-            base_ex = sorted(list(set(base_ex + full_df['exercise'].unique().tolist())))
+        # The list we use for the dropdown
+        exercise_options = ["DB Bench Press", "Hack Squat", "Lat Pulldown", "Lateral Raises", "Tricep Push Down", "Seated Cable Row", "Leg Press", "Bicep Curls", "Pull Ups", "Face Pulls", "Machine Crunch"]
         
-        ex_choice = st.selectbox("Exercise", base_exercises)
+        # Merge with any custom ones logged previously
+        if not full_df.empty:
+            logged_list = full_df['exercise'].unique().tolist()
+            exercise_options = sorted(list(set(exercise_options + logged_list)))
+        
+        ex_choice = st.selectbox("Select Exercise", exercise_options)
         new_ex = st.text_input("OR Add New Exercise Type")
         
         c1, c2 = st.columns(2)
@@ -73,28 +78,37 @@ with tab_log:
         
         notes = st.text_area("Notes (Seat Position, Tempo, etc.)", placeholder="e.g. Seat Pos 4, 3s descent...")
         
+        # Decide which name to save
         final_ex = new_ex if new_ex else ex_choice
         
         if st.form_submit_button("SAVE TO DATABASE 🚀"):
-            data = {"exercise": final_ex, "weight": wt, "reps": reps, "notes": notes}
+            data = {
+                "exercise": final_ex, 
+                "weight": wt, 
+                "reps": reps, 
+                "notes": notes,
+                "workout_day": "Logged" # Fallback to keep DB happy
+            }
             supabase.table("gym_logs").insert(data).execute()
             st.cache_data.clear()
             st.rerun()
 
-# --- TAB 2: SESSION SUMMARY (Comparison) ---
+# --- TAB 2: SESSION SUMMARY (Head-to-Head Comparison) ---
 with tab_session:
     if not full_df.empty:
         today = datetime.now().date()
         today_df = full_df[full_df['created_at'].dt.date == today]
         
         if not today_df.empty:
-            st.subheader(f"Today's Progress: {today.strftime('%d %b')}")
+            st.subheader(f"Today's Session: {today.strftime('%d %b')}")
             col1, col2 = st.columns(2)
             col1.metric("Exercises Done", len(today_df['exercise'].unique()))
-            col2.metric("Total Sets", len(today_df))
+            col2.metric("Total Volume", f"{int(today_df['volume'].sum())} kg")
             
             st.divider()
+            st.markdown("### 🆚 Today vs Last Time")
             for ex in sorted(today_df['exercise'].unique()):
+                # Get last set from BEFORE today
                 past_set = full_df[(full_df['exercise'] == ex) & (full_df['created_at'].dt.date < today)].head(1)
                 curr_set = today_df[today_df['exercise'] == ex].head(1)
                 
@@ -105,36 +119,9 @@ with tab_session:
                         p_wt = past_set.iloc[0]['weight']
                         delta = curr_set.iloc[0]['weight'] - p_wt
                         sc2.write(f"**Previous:** {p_wt}kg")
-                        if delta > 0: st.success(f"📈 +{delta}kg Increase!")
+                        if delta > 0: 
+                            st.success(f"📈 +{delta}kg Increase!")
+                        elif delta == 0 and curr_set.iloc[0]['reps'] > past_set.iloc[0]['reps']:
+                            st.success(f"🔥 +{curr_set.iloc[0]['reps'] - past_set.iloc[0]['reps']} Reps!")
         else:
-            st.info("Log a set to see today's session summary.")
-
-# --- TAB 3: PROGRESS LAB ---
-with tab_analysis:
-    if not full_df.empty:
-        analysis_ex = st.selectbox("Analyze History", sorted(full_df['exercise'].unique()))
-        ex_df = full_df[full_df['exercise'] == analysis_ex].sort_values('created_at')
-        
-        st.write("#### Strength Trajectory (Estimated 1RM)")
-        st.line_chart(ex_df.set_index('created_at')['e1rm'], color="#FFD700")
-        
-        st.write("#### Weight Over Time")
-        st.area_chart(ex_df.set_index('created_at')['weight'], color="#ff4b4b")
-
-# --- TAB 4: HALL OF FAME ---
-with tab_history:
-    if not full_df.empty:
-        st.subheader("🏆 Personal Records")
-        prs = full_df.sort_values('weight', ascending=False).drop_duplicates('exercise')
-        st.dataframe(prs[['exercise', 'weight', 'reps', 'e1rm']].reset_index(drop=True), hide_index=True)
-        
-        st.divider()
-        st.subheader("📋 Last 10 Entries")
-        st.dataframe(full_df[['created_at', 'exercise', 'weight', 'reps', 'notes']].head(10), hide_index=True)
-
-        if st.button("🗑️ DELETE LAST ENTRY"):
-            last_id = full_df.iloc[0]['id']
-            supabase.table("gym_logs").delete().eq("id", last_id).execute()
-            st.cache_data.clear()
-            st.rerun()
             
