@@ -1,50 +1,53 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
 
-# Set up the file for storage
-DATA_FILE = "gym_stats.csv"
+st.set_page_config(page_title="Gym Tracker", page_icon="💪")
+st.title("🏋️ My Gym Progress")
 
-def load_data():
-    try:
-        return pd.read_csv(DATA_FILE)
-    except FileNotFoundError:
-        return pd.DataFrame(columns=["Date", "Exercise", "Weight", "Reps", "Difficulty", "Time"])
+# Connect to Google Sheets
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-st.title("💪 Personal Gainz Tracker")
+# Read existing data
+df = conn.read(ttl=0)
 
-# --- INPUT SECTION ---
-with st.expander("Add New Set", expanded=True):
-    exercise = st.selectbox("Exercise", ["Bench Press", "Squat", "Deadlift", "Shoulder Press", "Rows"])
-    weight = st.number_input("Weight (kg/lbs)", min_value=0.0, step=2.5)
-    reps = st.number_input("Reps", min_value=0, step=1)
-    difficulty = st.select_slider("How did it feel?", options=["Easy", "Moderate", "Hard", "Very Hard"])
-    workout_time = st.time_input("Workout Time", datetime.now().time())
+# Input Section
+with st.form("log_form", clear_on_submit=True):
+    col1, col2 = st.columns(2)
+    with col1:
+        ex = st.selectbox("Exercise", ["Bench Press", "Squat", "Deadlift", "Shoulder Press", "Rows"])
+        wt = st.number_input("Weight (kg)", min_value=0.0, step=2.5)
+    with col2:
+        reps = st.number_input("Reps", min_value=1, step=1)
+        diff = st.select_slider("How did it feel?", options=["Easy", "Moderate", "Hard", "Very Hard"])
     
-    if st.button("Log Set"):
-        new_data = pd.DataFrame([[datetime.now().date(), exercise, weight, reps, difficulty, workout_time]], 
-                                columns=["Date", "Exercise", "Weight", "Reps", "Difficulty", "Time"])
-        df = load_data()
-        df = pd.concat([df, new_data], ignore_index=True)
-        df.to_csv(DATA_FILE, index=False)
-        st.success("Set Logged!")
+    submitted = st.form_submit_button("Log Set")
 
-# --- SMART PROMPT LOGIC ---
-df = load_data()
-if not df.empty:
-    exercise_history = df[df['Exercise'] == exercise].tail(2)
+if submitted:
+    new_data = pd.DataFrame([{
+        "Date": datetime.now().strftime("%Y-%m-%d"),
+        "Exercise": ex,
+        "Weight": wt,
+        "Reps": reps,
+        "Difficulty": diff,
+        "Time": datetime.now().strftime("%H:%M")
+    }])
     
-    if len(exercise_history) == 2:
-        weights = exercise_history['Weight'].tolist()
-        if weights[0] == weights[1]:
-            st.warning(f"🚀 Recommendation: You've hit {weights[1]} twice in a row. Time to increase the weight or reps!")
+    # Merge and update
+    updated_df = pd.concat([df, new_data], ignore_index=True)
+    conn.update(data=updated_df)
+    st.success(f"Saved {ex} set!")
+    st.balloons()
 
-# --- VISUALS ---
-st.header("Progress History")
-st.dataframe(df.sort_values(by="Date", ascending=False))
-
-# Simple Efficiency Chart
+# Smart Prompt: Check for progression
 if not df.empty:
-    st.subheader("Efficiency: Weight over Time")
-    st.line_chart(df[df['Exercise'] == exercise].set_index('Date')['Weight'])
-  
+    history = df[df['Exercise'] == ex].tail(2)
+    if len(history) == 2 and history.iloc[0]['Weight'] == history.iloc[1]['Weight']:
+        st.info(f"🚀 You've hit {wt}kg twice in a row. Time to try for a PR!")
+
+# Visualization
+st.subheader("Progress Chart")
+if not df.empty:
+    chart_data = df[df['Exercise'] == ex]
+    st.line_chart(chart_data.set_index('Date')['Weight'])
