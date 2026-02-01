@@ -8,20 +8,13 @@ st.title("⚡ Hybrid-45 Progress")
 
 # Connect to Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
+
+# Read the data - TTL=0 ensures we always get the latest from the sheet
 df = conn.read(ttl=0)
 
-# 1. LOG STEPS & ACTIVITY
-with st.expander("👟 Log Daily Steps & Cardio", expanded=False):
-    daily_steps = st.number_input("Steps Today", min_value=0, step=500)
-    activity = st.selectbox("Activity Type", ["Gym", "Cycle Commute", "Active Recovery", "Rest"])
-    if st.button("Log Daily Activity"):
-        # Logic to save steps could go here or in a separate sheet
-        st.success(f"Logged {daily_steps} steps!")
-
-# 2. LOG GYM WORKOUT
+# LOG GYM WORKOUT
 st.subheader("🏋️ Log Workout")
 with st.form("gym_form", clear_on_submit=True):
-    # Exercise List based on your Hybrid-45 Plan
     workout_type = st.radio("Workout Day", ["A: Foundation", "B: Hypertrophy", "C: Peak Intensity"])
     
     exercise_options = {
@@ -51,21 +44,16 @@ if submitted:
         "Difficulty": diff,
         "Time": datetime.now().strftime("%H:%M")
     }])
-    updated_df = pd.concat([df, new_entry], ignore_index=True)
-    conn.update(data=updated_df)
-    st.balloons()
-
-# 3. DATA & PROGRESS
-if not df.empty:
-    st.divider()
-    # Your 2.5% - 5% increase logic
-    hist = df[df['Exercise'] == ex]
-    if len(hist) >= 2:
-        last_two = hist.tail(2)['Weight'].tolist()
-        if last_two[0] == last_two[1]:
-            increase = round(wt * 1.025, 1)
-            st.warning(f"🎯 **Progression Alert:** You've hit {wt}kg twice. Aim for **{increase}kg** today (2.5% increase)!")
-
-    st.subheader(f"Progress: {ex}")
-    st.line_chart(hist.set_index('Date')['Weight'])
     
+    # NEW SAVE METHOD: Combining dataframes
+    updated_df = pd.concat([df, new_entry], ignore_index=True)
+    
+    # Force the update
+    try:
+        conn.update(data=updated_df)
+        st.success(f"Logged {ex} to Google Sheets!")
+        st.balloons()
+        st.rerun() # Refresh to show new data
+    except Exception as e:
+        st.error(f"Save failed. Error: {e}")
+        
