@@ -9,113 +9,91 @@ url = st.secrets["SUPABASE_URL"]
 key = st.secrets["SUPABASE_KEY"]
 supabase = create_client(url, key)
 
-st.set_page_config(page_title="H-45 COMMAND", page_icon="💪", layout="wide")
+st.set_page_config(page_title="H-45 DATA PRO", page_icon="📊", layout="wide")
 
-# FORCED HIGH-CONTRAST DARK THEME + BUTTON FIXES
+# CUSTOM CSS: HIGH CONTRAST & MOBILE OPTIMIZATION
 st.markdown("""
     <style>
     .stApp { background-color: #05070a !important; }
-    h1, h2, h3, p, span, label { color: #FFFFFF !important; }
+    h1, h2, h3, p, span, label, .stMarkdown { color: #FFFFFF !important; }
     
-    /* FIX BUTTON VISIBILITY */
+    /* STARK WHITE BUTTON TEXT */
     .stButton>button {
         background-color: #ff4b4b !important;
         color: white !important;
-        font-weight: bold !important;
+        font-weight: 800 !important;
         border: none !important;
-        width: 100%;
+        text-transform: uppercase;
     }
-    .stButton>button:active, .stButton>button:focus {
-        color: white !important;
-        background-color: #cc0000 !important;
-    }
-
+    
     /* METRIC CARDS */
     [data-testid="stMetricValue"] { color: #FFD700 !important; font-weight: 800; }
-    .stMetric { background: #161b22 !important; border: 1px solid #30363d !important; padding: 10px; border-radius: 12px; }
+    .stMetric { background: #161b22 !important; border: 1px solid #30363d !important; padding: 15px; border-radius: 15px; }
     
-    /* TABLE STYLING */
-    [data-testid="stTable"] { background-color: #161b22; color: white; border-radius: 10px; }
+    /* TABS STYLING */
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab"] {
+        background-color: #161b22;
+        border-radius: 5px 5px 0px 0px;
+        color: white !important;
+        padding: 10px 20px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# --- DATA LOADING ---
+# --- DATA ENGINE ---
 @st.cache_data(ttl=2)
 def load_data():
     try:
         response = supabase.table("gym_logs").select("*").order("created_at", desc=True).execute()
-        return pd.DataFrame(response.data) if response.data else pd.DataFrame()
-    except:
-        return pd.DataFrame()
+        df = pd.DataFrame(response.data) if response.data else pd.DataFrame()
+        if not df.empty:
+            df['created_at'] = pd.to_datetime(df['created_at'])
+            # Calc Estimated 1RM: Weight * (1 + Reps/30)
+            df['e1rm'] = round(df['weight'] * (1 + df['reps'] / 30), 1)
+            df['volume'] = df['weight'] * df['reps']
+        return df
+    except: return pd.DataFrame()
 
 full_df = load_data()
 
-st.title("💪 H-45 COMMAND")
+st.title("⚡ HYBRID-45 DATA PRO")
 
-# --- TOP SKILL: PERSONAL RECORDS ---
-if not full_df.empty:
-    st.subheader("🏆 Personal Records (PRs)")
-    # Find max weight for each exercise
-    pr_df = full_df.groupby('exercise')['weight'].max().reset_index()
-    pr_cols = st.columns(len(pr_df.head(4))) # Show top 4
-    for i, col in enumerate(pr_cols):
-        if i < len(pr_df):
-            col.metric(pr_df.iloc[i]['exercise'], f"{pr_df.iloc[i]['weight']}kg")
+# --- TABS INTERFACE ---
+tab_log, tab_session, tab_lab, tab_history = st.tabs(["⚡ LOG", "📊 SESSION", "📈 LAB", "🏆 PRs"])
 
-# --- LOGGING FORM ---
-with st.container():
-    st.subheader("🏋️ Log Next Set")
+# --- TAB 1: LOGGING ---
+with tab_log:
     with st.form("entry_form", clear_on_submit=True):
         ex_list = ["Hack Squat", "DB Bench Press", "Lat Pulldown", "Lateral Raises", "Tricep Push Down", "Seated Cable Row", "Leg Press", "Bicep Curls", "Pull Ups", "Face Pulls", "Machine Crunch"]
-        
-        # Merge logged exercises for dynamic dropdown
         if not full_df.empty:
             ex_list = sorted(list(set(ex_list + full_df['exercise'].unique().tolist())))
-
+        
         ex_choice = st.selectbox("Exercise", ex_list)
-        c1, c2, c3 = st.columns(3)
+        c1, c2 = st.columns(2)
         with c1: wt = st.number_input("Weight (kg)", step=2.5)
         with c2: reps = st.number_input("Reps", step=1)
-        with c3: diff = st.select_slider("Intensity", options=["Easy", "Mod", "Hard", "Fail"])
         
-        notes = st.text_area("Notes (Seat, Tempo, etc.)", placeholder="Seat pos 3...")
+        diff = st.select_slider("Intensity", options=["Easy", "Mod", "Hard", "Fail"])
+        notes = st.text_area("Notes (Seat, Tempo)", placeholder="Pos 3, 3s descent...")
         
-        if st.form_submit_button("SAVE TO DATABASE 🚀"):
+        if st.form_submit_button("SAVE SET 🚀"):
             data = {"exercise": ex_choice, "weight": wt, "reps": reps, "difficulty": diff, "notes": notes}
             supabase.table("gym_logs").insert(data).execute()
             st.cache_data.clear()
             st.rerun()
 
-# --- DUPLICATE PREVENTION: RECENT HISTORY ---
-st.divider()
-st.subheader("🕒 Last 5 Sets (Prevention View)")
-if not full_df.empty:
-    # We only show the most relevant columns for mobile glance
-    recent_view = full_df[['exercise', 'weight', 'reps', 'notes']].head(5)
-    st.table(recent_view)
-else:
-    st.info("No sets logged yet.")
-
-# --- PROGRESS MONITORING ---
-if not full_df.empty:
-    st.divider()
-    view_ex = st.selectbox("🔍 Analysis Mode", sorted(full_df['exercise'].unique()))
-    
-    ex_history = full_df[full_df['exercise'] == view_ex].copy()
-    ex_history['date'] = pd.to_datetime(ex_history['created_at'])
-    
-    # Advanced Metric: Volume Trend
-    ex_history['volume'] = ex_history['weight'] * ex_history['reps']
-    
-    t1, t2 = st.tabs(["📈 Weight Graph", "📊 Volume Progress"])
-    with t1:
-        st.area_chart(ex_history.set_index('date')['weight'], color="#ff4b4b")
-    with t2:
-        st.bar_chart(ex_history.set_index('date')['volume'], color="#FFD700")
-
-    if st.button("🗑️ Undo Last Mistake"):
-        last_id = full_df.iloc[0]['id']
-        supabase.table("gym_logs").delete().eq("id", last_id).execute()
-        st.cache_data.clear()
-        st.rerun()
+# --- TAB 2: SESSION COMPARISON ---
+with tab_session:
+    if not full_df.empty:
+        today = datetime.now().date()
+        today_data = full_df[full_df['created_at'].dt.date == today]
         
+        if not today_data.empty:
+            st.subheader("🔥 Current Session Progress")
+            col1, col2 = st.columns(2)
+            col1.metric("Current Vol", f"{int(today_data['volume'].sum())} kg")
+            col2.metric("Sets Done", len(today_data))
+            
+            st.markdown("### Head-to-Head (Today vs Last)")
+            for ex
