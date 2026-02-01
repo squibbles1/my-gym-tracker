@@ -2,94 +2,131 @@ import streamlit as st
 from supabase import create_client
 import pandas as pd
 from datetime import datetime
+import time
 
 # 1. Initialize Supabase
 url = st.secrets["SUPABASE_URL"]
 key = st.secrets["SUPABASE_KEY"]
 supabase = create_client(url, key)
 
-st.set_page_config(page_title="Hybrid-45 Gym", page_icon="🏋️", layout="wide")
+st.set_page_config(page_title="Hybrid-45 PRO", page_icon="⚡", layout="wide")
 
-# Custom Styling
+# CUSTOM CSS FOR HIGH CONTRAST & READABILITY
 st.markdown("""
     <style>
-    .stMetric { background-color: #1e2130; padding: 15px; border-radius: 10px; border: 1px solid #4a4a4a; }
+    /* Force high-contrast white text */
+    [data-testid="stMetricValue"] { color: #FFFFFF !important; font-weight: 800 !important; font-size: 2.2rem !important; }
+    [data-testid="stMetricLabel"] { color: #E0E0E0 !important; font-size: 1.1rem !important; }
+    h1, h2, h3, p { color: white !important; }
+    
+    /* Modern Card Look */
+    .stMetric {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        padding: 20px;
+        border-radius: 15px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    }
+    
+    /* Custom Progress Bar Color */
+    .stProgress > div > div > div > div { background-color: #ff4b4b; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🏋️ Hybrid-45 Gym Tracker")
+st.title("⚡ Hybrid-45 PRO")
 
 # --- DATA LOADING ---
 response = supabase.table("gym_logs").select("*").order("created_at", desc=True).execute()
 full_df = pd.DataFrame(response.data) if response.data else pd.DataFrame()
 
+# --- WORKOUT DEFINITIONS ---
+ex_list = {
+    "A: Foundation": ["Hack Squat (Moderate)", "DB Bench Press", "Lat Pulldowns", "Lateral Raises", "Tricep Rope Pushdown"],
+    "B: Hypertrophy": ["Incline Machine Press", "Seated Cable Row", "Leg Press (High Foot)", "DB Bicep Curls", "Plank"],
+    "C: Peak Intensity": ["Hack Squat (Intensity)", "Chest Fly Machine", "Pull-Ups / Assisted", "Face Pulls", "Overhead Tricep Extension"]
+}
+
+# --- SESSION PROGRESS ---
+if not full_df.empty:
+    today = datetime.now().strftime("%Y-%m-%d")
+    today_data = full_df[full_df['created_at'].str.contains(today)]
+    completed_count = len(today_data['exercise'].unique())
+    progress = min(completed_count / 5, 1.0)
+    st.write(f"**Session Progress: {completed_count}/5 Exercises Done**")
+    st.progress(progress)
+
 # --- LOGGING FORM ---
-with st.expander("➕ Log New Set", expanded=True):
+with st.expander("➕ LOG NEXT SET", expanded=True):
     with st.form("entry_form", clear_on_submit=True):
-        ex_list = {
-            "A: Foundation": ["Hack Squat (Moderate)", "DB Bench Press", "Lat Pulldowns", "Lateral Raises", "Tricep Rope Pushdown"],
-            "B: Hypertrophy": ["Incline Machine Press", "Seated Cable Row", "Leg Press (High Foot)", "DB Bicep Curls", "Plank"],
-            "C: Peak Intensity": ["Hack Squat (Intensity)", "Chest Fly Machine", "Pull-Ups / Assisted", "Face Pulls", "Overhead Tricep Extension"]
-        }
-        
-        day_type = st.radio("Select Workout", list(ex_list.keys()), horizontal=True)
-        ex_choice = st.selectbox("Exercise", ex_list[day_type])
+        day_type = st.radio("Workout Day", list(ex_list.keys()), horizontal=True)
+        ex_choice = st.selectbox("Select Exercise", ex_list[day_type])
         
         c1, c2, c3 = st.columns(3)
         with c1: wt = st.number_input("Weight (kg)", step=2.5)
         with c2: reps = st.number_input("Reps", step=1)
         with c3: diff = st.select_slider("Intensity", options=["Easy", "Mod", "Hard", "Fail"])
         
-        if st.form_submit_button("Save Set 🚀"):
+        if st.form_submit_button("SAVE SET 🚀"):
             data = {"exercise": ex_choice, "weight": wt, "reps": reps, "difficulty": diff, "workout_day": day_type}
             supabase.table("gym_logs").insert(data).execute()
             st.rerun()
 
-# --- COMPARISON & CHART DASHBOARD ---
+# --- COACHING & COMPARISON ---
 if not full_df.empty:
     st.divider()
+    selected_ex = st.selectbox("🔍 SELECT EXERCISE TO REVIEW", sorted(full_df['exercise'].unique()))
     
-    # Dropdown to select exercise for comparison
-    unique_exercises = sorted(full_df['exercise'].unique())
-    selected_ex = st.selectbox("🔍 Compare History For:", unique_exercises)
-
-    # Get last 2 entries for comparison
-    compare_df = full_df[full_df['exercise'] == selected_ex].head(2)
+    history = full_df[full_df['exercise'] == selected_ex].head(2)
     
-    if not compare_df.empty:
-        col_new, col_old = st.columns(2)
+    if not history.empty:
+        col1, col2 = st.columns(2)
         
-        # Latest Workout
-        with col_new:
-            st.write("### 🥇 Latest Session")
-            row1 = compare_df.iloc[0]
+        # Latest Workout (Stark White)
+        with col1:
+            st.subheader("🥇 Latest Session")
+            row1 = history.iloc[0]
             st.metric("Weight", f"{row1['weight']} kg")
             st.metric("Reps", f"{row1['reps']}")
-            st.metric("Vol", f"{row1['weight'] * row1['reps']} kg")
-
-        # Previous Workout with Comparison
-        with col_old:
-            st.write("### 🥈 Previous Session")
-            if len(compare_df) > 1:
-                row2 = compare_df.iloc[1]
+            st.metric("Total Vol", f"{int(row1['weight'] * row1['reps'])} kg")
+        
+        # Comparison with Arrows
+        with col2:
+            st.subheader("🥈 Previous Session")
+            if len(history) > 1:
+                row2 = history.iloc[1]
                 w_delta = float(row1['weight'] - row2['weight'])
                 r_delta = int(row1['reps'] - row2['reps'])
                 st.metric("Weight", f"{row2['weight']} kg", delta=f"{w_delta} kg")
                 st.metric("Reps", f"{row2['reps']}", delta=f"{r_delta}")
-                st.metric("Vol", f"{row2['weight'] * row2['reps']} kg")
+                st.metric("Total Vol", f"{int(row2['weight'] * row2['reps'])} kg")
             else:
-                st.info("Log one more session to see comparison data.")
+                st.info("Log one more session for comparison data.")
 
-        # PROGRESSION ALERT (Hybrid-45 Logic)
-        if len(compare_df) > 1:
-            if row1['weight'] == row2['weight'] and row1['reps'] >= row2['reps']:
+        # AUTOMATED HYBRID-45 COACH
+        if len(history) > 1:
+            if row1['weight'] == row2['weight']:
                 target = round(row1['weight'] * 1.025, 1)
-                st.success(f"📈 **Progression Target:** Hit {row1['weight']}kg twice? Try **{target}kg** next!")
+                st.success(f"🎯 **COACH:** You hit {row1['weight']}kg twice. Today's Goal: **{target}kg**")
+            elif row1['weight'] > row2['weight']:
+                st.info("🔥 **COACH:** New weight record! Focus on maintaining form today.")
 
-    # THE CHART
-    chart_data = full_df[full_df['exercise'] == selected_ex].copy()
-    chart_data['date'] = pd.to_datetime(chart_data['created_at'])
-    st.area_chart(chart_data.set_index('date')['weight'], color="#ff4b4b")
-else:
-    st.info("No gym data found yet. Log a set above!")
+    # --- TOOLS & CHARTS ---
+    st.divider()
+    t1, t2 = st.tabs(["📈 Progress Chart", "⏲️ Rest Timer"])
     
+    with t1:
+        chart_data = full_df[full_df['exercise'] == selected_ex].copy()
+        chart_data['date'] = pd.to_datetime(chart_data['created_at'])
+        st.area_chart(chart_data.set_index('date')['weight'], color="#ff4b4b")
+        
+    with t2:
+        if st.button("Start 90s Rest"):
+            placeholder = st.empty()
+            for i in range(90, 0, -1):
+                placeholder.metric("Rest Remaining", f"{i}s")
+                time.sleep(1)
+            st.balloons()
+            st.warning("⏱️ REST OVER: GET TO THE NEXT SET!")
+
+else:
+    st.info("Welcome to Hybrid-45! Log your first set above to see your dashboard.")
