@@ -9,50 +9,58 @@ url = st.secrets["SUPABASE_URL"]
 key = st.secrets["SUPABASE_KEY"]
 supabase = create_client(url, key)
 
-st.set_page_config(page_title="H-45 COMMAND", page_icon="💪", layout="wide")
+st.set_page_config(page_title="H-45 COMMAND", page_icon="⚡", layout="wide")
 
-# --- MODERN NEON THEME & BUTTON OVERRIDES ---
+# --- MODERN GLASS-MORPHIC THEME ---
 st.markdown("""
     <style>
-    /* Force Dark Background */
-    .stApp { background-color: #0a0e14 !important; }
+    /* Global App Background */
+    .stApp { background-color: #0d1117 !important; }
     
-    /* Global Text Color */
+    /* Clean White Text */
     h1, h2, h3, p, span, label, .stMarkdown { color: #ffffff !important; }
 
-    /* MODERN BUTTONS: Fixed White Text, No Hover Issues */
+    /* BUTTONS: THE FIX */
     div.stButton > button {
-        background-color: #007bff !important; /* Electric Blue */
-        color: #ffffff !important;
-        font-weight: 700 !important;
+        background-color: #2e7bff !important; /* Cobalt Blue */
+        color: #ffffff !important;           /* STARK WHITE TEXT */
+        font-weight: 800 !important;
         border: none !important;
-        border-radius: 8px !important;
-        padding: 15px !important;
+        border-radius: 12px !important;
+        padding: 18px !important;
         width: 100% !important;
         text-transform: uppercase;
-        box-shadow: 0px 4px 10px rgba(0, 123, 255, 0.3);
+        letter-spacing: 1px;
+        box-shadow: 0px 4px 15px rgba(46, 123, 255, 0.4);
     }
     
-    /* Ensure text stays white even when clicked */
-    div.stButton > button:hover, div.stButton > button:active, div.stButton > button:focus {
+    /* Hover/Active states to keep text white */
+    div.stButton > button:hover, div.stButton > button:active {
         color: #ffffff !important;
-        background-color: #0056b3 !important;
-        border: none !important;
+        background-color: #1a56b3 !important;
+        box-shadow: none !important;
     }
 
-    /* Metric Card Modern Look */
-    [data-testid="stMetricValue"] { color: #FFD700 !important; font-weight: 800; font-size: 2.5rem !important; }
+    /* Metric Cards: Modern Glass Look */
+    [data-testid="stMetricValue"] { color: #00d4ff !important; font-weight: 800; font-size: 2.2rem !important; }
     .stMetric {
-        background: #1c222d !important;
-        border: 1px solid #2d3646 !important;
+        background: rgba(255, 255, 255, 0.05) !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
         padding: 20px !important;
-        border-radius: 15px !important;
+        border-radius: 20px !important;
     }
 
-    /* Tab Styling */
-    .stTabs [data-baseweb="tab-list"] { background-color: transparent; }
-    .stTabs [data-baseweb="tab"] { color: #94a3b8 !important; font-weight: 600; }
-    .stTabs [data-baseweb="tab"][aria-selected="true"] { color: #ffffff !important; border-bottom-color: #007bff !important; }
+    /* Tabs Styling */
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab"] { 
+        color: #8b949e !important; 
+        font-weight: 600; 
+        padding: 10px 15px;
+    }
+    .stTabs [data-baseweb="tab"][aria-selected="true"] { 
+        color: #ffffff !important; 
+        border-bottom-color: #2e7bff !important; 
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -65,97 +73,98 @@ def load_data():
         if not df.empty:
             df['created_at'] = pd.to_datetime(df['created_at'])
             df['vol'] = df['weight'] * df['reps']
-            # Strength Est (1RM)
+            # Brzycki 1RM for strength tracking
             df['e1rm'] = round(df['weight'] / (1.0278 - (0.0278 * df['reps'])), 1)
         return df
-    except Exception:
-        return pd.DataFrame()
+    except: return pd.DataFrame()
 
-f_df = load_data()
+full_df = load_data()
 
-st.title("💪 HYBRID-45 COMMAND")
+st.title("⚡ HYBRID-45 COMMAND")
 
-# --- TOP STATS BAR ---
-if not f_df.empty:
+# --- TOP SUMMARY BAR ---
+if not full_df.empty:
     m1, m2, m3 = st.columns(3)
-    with m1: st.metric("Workouts Logged", len(f_df))
-    with m2: 
-        total_vol = int(f_df['vol'].sum())
-        st.metric("All-Time Volume", f"{total_vol:,}kg")
-    with m3:
-        best_lift = f_df['weight'].max()
-        st.metric("Max Weight", f"{best_lift}kg")
+    with m1: st.metric("Total Lifted", f"{int(full_df['vol'].sum()):,}kg")
+    with m2: st.metric("Sessions", len(full_df['created_at'].dt.date.unique()))
+    with m3: st.metric("Best Lift", f"{full_df['weight'].max()}kg")
 
-# --- MAIN TABS ---
-t_log, t_sesh, t_lab, t_pr = st.tabs(["⚡ LOG SET", "📊 SESSION", "📈 PROGRESS", "🏆 HALL OF FAME"])
+# --- MAIN NAVIGATION ---
+tab_log, tab_session, tab_lab, tab_history = st.tabs(["⚡ LOG SET", "📊 SESSION", "📈 PROGRESS", "🏆 HALL OF FAME"])
 
 # --- TAB 1: LOGGING ---
-with t_log:
+with tab_log:
     with st.form("entry_form", clear_on_submit=True):
-        opts = ["Hack Squat", "DB Bench Press", "Lat Pulldown", "Lateral Raises", "Tricep Push Down", "Seated Cable Row", "Leg Press", "Bicep Curls", "Pull Ups", "Face Pulls", "Machine Crunch"]
-        if not f_df.empty:
-            opts = sorted(list(set(opts + f_df['exercise'].unique().tolist())))
+        exercises = ["DB Bench Press", "Hack Squat", "Lat Pulldown", "Lateral Raises", "Tricep Push Down", "Seated Cable Row", "Leg Press", "Bicep Curls", "Pull Ups", "Face Pulls", "Machine Crunch"]
+        if not full_df.empty:
+            exercises = sorted(list(set(exercises + full_df['exercise'].unique().tolist())))
         
-        ex = st.selectbox("Exercise", opts)
+        ex = st.selectbox("Exercise Name", exercises)
         
         c1, c2 = st.columns(2)
         with c1: wt = st.number_input("Weight (kg)", step=2.5)
         with c2: rp = st.number_input("Reps", step=1)
         
-        note = st.text_area("Notes", placeholder="Seat pos, tempo, tempo...")
+        notes = st.text_area("Notes (Seat Position / Tempo)", placeholder="e.g. Seat Pos 4, 3s descent...")
         
-        if st.form_submit_button("SAVE TO CLOUD 🚀"):
-            payload = {"exercise": ex, "weight": wt, "reps": rp, "notes": note}
+        if st.form_submit_button("SAVE TO DATABASE 🚀"):
+            payload = {"exercise": ex, "weight": wt, "reps": rp, "notes": notes}
             supabase.table("gym_logs").insert(payload).execute()
             st.cache_data.clear()
             st.rerun()
 
-# --- TAB 2: SESSION SUMMARY ---
-with t_sesh:
-    if not f_df.empty:
+    # --- DUPLICATE PREVENTION ---
+    st.divider()
+    st.subheader("🕒 Recent Activity")
+    if not full_df.empty:
+        st.dataframe(full_df[['exercise', 'weight', 'reps', 'notes']].head(5), hide_index=True, use_container_width=True)
+
+# --- TAB 2: SESSION ANALYSIS ---
+with tab_session:
+    if not full_df.empty:
         today = datetime.now().date()
-        t_df = f_df[f_df['created_at'].dt.date == today]
-        if not t_df.empty:
-            st.subheader(f"Session: {today.strftime('%d %b')}")
-            for item in sorted(t_df['exercise'].unique()):
-                past = f_df[(f_df['exercise'] == item) & (f_df['created_at'].dt.date < today)].head(1)
-                curr = t_df[t_df['exercise'] == item].head(1)
+        today_df = full_df[full_df['created_at'].dt.date == today]
+        if not today_df.empty:
+            st.subheader(f"Session Summary: {today.strftime('%d %b')}")
+            for item in sorted(today_df['exercise'].unique()):
+                past = full_df[(full_df['exercise'] == item) & (full_df['created_at'].dt.date < today)].head(1)
+                curr = today_df[today_df['exercise'] == item].head(1)
                 with st.expander(f"📌 {item}", expanded=True):
                     sc1, sc2 = st.columns(2)
-                    sc1.metric("Current", f"{curr.iloc[0]['weight']}kg")
+                    sc1.metric("Today", f"{curr.iloc[0]['weight']}kg")
                     if not past.empty:
                         p_wt = past.iloc[0]['weight']
                         diff = curr.iloc[0]['weight'] - p_wt
-                        sc2.metric("Last Time", f"{p_wt}kg", delta=f"{diff}kg")
+                        sc2.metric("Previous", f"{p_wt}kg", delta=f"{diff}kg")
+                    else:
+                        sc2.caption("New data point logged.")
         else:
-            st.info("Log a set to see your session comparison.")
+            st.info("Log your first set to see the session comparison!")
     else:
-        st.info("No data yet.")
+        st.info("No data logged yet.")
 
 # --- TAB 3: PROGRESS LAB ---
-with t_lab:
-    if not f_df.empty:
-        sel = st.selectbox("Select Exercise", sorted(f_df['exercise'].unique()))
-        h = f_df[f_df['exercise'] == sel].sort_values('created_at')
+with tab_lab:
+    if not full_df.empty:
+        sel = st.selectbox("Select Movement", sorted(full_df['exercise'].unique()))
+        h = full_df[full_df['exercise'] == sel].sort_values('created_at')
         
-        st.write("#### Strength Trend (Est. 1RM)")
-        st.line_chart(h.set_index('created_at')['e1rm'], color="#FFD700")
+        st.write("#### Strength Trend (Estimated 1RM)")
+        st.line_chart(h.set_index('created_at')['e1rm'], color="#00d4ff")
         
-        st.write("#### Total Workload (Volume)")
-        st.bar_chart(h.set_index('created_at')['vol'], color="#007bff")
-    else:
-        st.info("Analyze your growth here once you've logged data.")
+        st.write("#### Workload (Total Volume)")
+        st.bar_chart(h.set_index('created_at')['vol'], color="#2e7bff")
 
 # --- TAB 4: HALL OF FAME ---
-with t_pr:
-    if not f_df.empty:
-        st.subheader("🏆 Personal Bests")
-        prs = f_df.sort_values('weight', ascending=False).drop_duplicates('exercise')
+with tab_history:
+    if not full_df.empty:
+        st.subheader("🏆 Personal Records")
+        prs = full_df.sort_values('weight', ascending=False).drop_duplicates('exercise')
         st.table(prs[['exercise', 'weight', 'reps', 'e1rm']].reset_index(drop=True))
         
         st.divider()
         if st.button("🗑️ DELETE LAST ENTRY"):
-            l_id = f_df.iloc[0]['id']
+            l_id = full_df.iloc[0]['id']
             supabase.table("gym_logs").delete().eq("id", l_id).execute()
             st.cache_data.clear()
             st.rerun()
