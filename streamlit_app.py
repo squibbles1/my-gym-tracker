@@ -1,59 +1,59 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
+from supabase import create_client
 import pandas as pd
 from datetime import datetime
 
-st.set_page_config(page_title="Hybrid-45 Tracker", page_icon="⚡")
-st.title("⚡ Hybrid-45 Progress")
+# Initialize Supabase
+url = st.secrets["SUPABASE_URL"]
+key = st.secrets["SUPABASE_KEY"]
+supabase = create_client(url, key)
 
-# Connect to Google Sheets
-conn = st.connection("gsheets", type=GSheetsConnection)
+st.title("⚡ Hybrid-45: Supabase Edition")
 
-# Read the data - TTL=0 ensures we always get the latest from the sheet
-df = conn.read(ttl=0)
-
-# LOG GYM WORKOUT
-st.subheader("🏋️ Log Workout")
+# --- LOGGING FORM ---
 with st.form("gym_form", clear_on_submit=True):
-    workout_type = st.radio("Workout Day", ["A: Foundation", "B: Hypertrophy", "C: Peak Intensity"])
+    day = st.radio("Workout Day", ["A: Foundation", "B: Hypertrophy", "C: Peak Intensity"])
     
-    exercise_options = {
+    # Map exercises to your plan
+    ex_list = {
         "A: Foundation": ["Hack Squat", "DB Bench Press", "Lat Pulldowns", "Lateral Raises", "Tricep Rope Pushdown"],
         "B: Hypertrophy": ["Incline Machine Press", "Seated Cable Row", "Leg Press", "DB Bicep Curls", "Plank"],
         "C: Peak Intensity": ["Hack Squat", "Chest Fly Machine", "Pull-Ups", "Face Pulls", "Overhead Tricep Extension"]
     }
     
-    ex = st.selectbox("Exercise", exercise_options[workout_type])
+    ex = st.selectbox("Exercise", ex_list[day])
+    wt = st.number_input("Weight (kg)", step=2.5)
+    reps = st.number_input("Reps", step=1)
+    diff = st.select_slider("Intensity", options=["Easy", "Moderate", "Hard", "Failure"])
     
-    col1, col2 = st.columns(2)
-    with col1:
-        wt = st.number_input("Weight (kg)", min_value=0.0, step=2.5)
-    with col2:
-        reps = st.number_input("Reps", min_value=1, step=1)
-        
-    diff = st.select_slider("Intensity/Feel", options=["Easy", "Moderate", "Hard", "Failure"])
-    
-    submitted = st.form_submit_button("Save Set")
-
-if submitted:
-    new_entry = pd.DataFrame([{
-        "Date": datetime.now().strftime("%Y-%m-%d"),
-        "Exercise": ex,
-        "Weight": wt,
-        "Reps": reps,
-        "Difficulty": diff,
-        "Time": datetime.now().strftime("%H:%M")
-    }])
-    
-    # NEW SAVE METHOD: Combining dataframes
-    updated_df = pd.concat([df, new_entry], ignore_index=True)
-    
-    # Force the update
-    try:
-        conn.update(data=updated_df)
-        st.success(f"Logged {ex} to Google Sheets!")
+    if st.form_submit_button("Save to Database"):
+        data = {
+            "exercise": ex,
+            "weight": wt,
+            "reps": reps,
+            "difficulty": diff,
+            "workout_day": day
+        }
+        # Save to Supabase
+        response = supabase.table("gym_logs").insert(data).execute()
+        st.success(f"Logged {ex}!")
         st.balloons()
-        st.rerun() # Refresh to show new data
-    except Exception as e:
-        st.error(f"Save failed. Error: {e}")
-        
+
+# --- DATA VIEWING ---
+st.divider()
+st.subheader("Progress History")
+
+# Pull fresh data from Supabase
+response = supabase.table("gym_logs").select("*").order("created_at", desc=True).execute()
+if response.data:
+    full_df = pd.DataFrame(response.data)
+    
+    # Show chart for current exercise
+    chart_df = full_df[full_df['exercise'] == ex]
+    if not chart_df.empty:
+        st.line_chart(chart_df.set_index('created_at')['weight'])
+    
+    st.dataframe(full_df)
+else:
+    st.info("No data logged yet. Let's get to work!")
+    
